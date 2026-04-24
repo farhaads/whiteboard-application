@@ -76,7 +76,7 @@ Flow:
 
 1. Browser loads the board with the cookie session.
 2. Client calls `GET /api/board/[boardId]/ws-token` (with `credentials: "include"`). Next verifies the cookie JWT and returns the **same** JWT in JSON (short-lived use: passed as a query param).
-3. `WebsocketProvider` connects to `NEXT_PUBLIC_SYNC_URL` with `?token=...` and room = `boardId`.
+3. `WebsocketProvider` connects to the **`syncUrl`** from that response (same-origin `/yjs-ws/` on Fly, or `SYNC_WEBSOCKET_URL` / dev default), with `?token=...` and room = `boardId`. The client may fall back to `NEXT_PUBLIC_SYNC_URL` only if `syncUrl` is absent.
 4. **`sync/index.js`** verifies JWT with `jose`; `payload.boardId` must equal the WebSocket “room” path. Otherwise the socket is closed with **4401 Unauthorized**.
 
 So: **one secret (`JWT_SECRET`)**, **one kind of token** (board JWT), used for both HTTP APIs and the sync server gate.
@@ -109,8 +109,9 @@ So: **one secret (`JWT_SECRET`)**, **one kind of token** (board JWT), used for b
 | Variable | Where | Purpose |
 |----------|--------|---------|
 | `JWT_SECRET` | Next + sync | Sign/verify board JWTs (use a long random value in production) |
-| `NEXT_PUBLIC_SYNC_URL` | Next (client fallback) | WebSocket base URL for local dev / build-time; see `SYNC_WEBSOCKET_URL` for Fly |
-| `SYNC_WEBSOCKET_URL` | Next (server → API) | **Preferred in production:** `wss://…` to your sync Fly app; returned to the browser from `/api/board/.../ws-token` so you do **not** need to rebuild for URL changes |
+| `NEXT_PUBLIC_SYNC_URL` | Next **client only** (optional fallback in `useYDoc`) | Local dev / emergency client fallback — **not** read by `/api/.../ws-token` (Next would bake `NEXT_PUBLIC_*` at build time) |
+| `SYNC_WEBSOCKET_URL` | Next **server** (runtime) | Optional explicit `wss://…`; if unset and `ENABLE_SAME_ORIGIN_YJS=1`, ws-token derives `wss://<host>/yjs-ws` from the request |
+| `ENABLE_SAME_ORIGIN_YJS` | Next (server) | `1` = bundled nginx + sync on same host (`fly.toml` + Docker image) |
 | `BOARD_DATA_DIR` | Next | SQLite directory (Fly sets `/data` on a volume) |
 | `UPLOAD_DIR` | Next | Image upload root |
 | `NODE_ENV` | Next | `production` enables `secure` cookies |
@@ -172,7 +173,7 @@ If you previously set **`SYNC_WEBSOCKET_URL`** to a separate sync app, that valu
 
 **Optional: second Fly app for sync** (see `sync/fly.toml`) — use when you want sync scaled or isolated. Then set `SYNC_WEBSOCKET_URL` on the web app to `wss://<sync-app>.fly.dev`, same `JWT_SECRET` on both apps, and **`min_machines_running = 1`** on sync unless you add shared persistence.
 
-Use **`wss://`** (not `ws://`) for HTTPS sites. You can still set `NEXT_PUBLIC_SYNC_URL` at build time as a fallback when `SYNC_WEBSOCKET_URL` and same-origin mode are unset.
+Use **`wss://`** (not `ws://`) for HTTPS sites. The ws-token **`syncUrl`** comes from **`SYNC_WEBSOCKET_URL`** or same-origin derivation — not from `NEXT_PUBLIC_*` on the server.
 
 ---
 
