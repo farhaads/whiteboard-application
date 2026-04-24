@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.github
+data
+uploads
+.env
+.env.*
+!.env.example
+npm-debug.log*
+README.md
+cursor-prompts.md
+sync/node_modules
+terminals

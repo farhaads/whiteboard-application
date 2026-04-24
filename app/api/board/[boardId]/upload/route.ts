@@ -10,6 +10,7 @@ import { BOARD_COOKIE, verifyBoardJwt } from "@/lib/boardJwt";
 import { getUploadDir } from "@/lib/serverUploadDir";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const MAX_BYTES = 10 * 1024 * 1024;
 
