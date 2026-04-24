@@ -53,4 +53,5 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 EXPOSE 8080
-CMD ["/app/deploy/fly-start.sh"]
+# node:20 image entrypoint prepends `node` when CMD is not a PATH executable; use sh explicitly.
+CMD ["/bin/sh", "/app/deploy/fly-start.sh"]

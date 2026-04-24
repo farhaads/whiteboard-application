@@ -1,6 +1,6 @@
 #!/bin/sh
 set -e
-# Fly hits 8080 (nginx). Next must use 3001; sync uses 1234 — isolate PORT per subshell.
+# Fly -> nginx :8080; Next :3001; y-websocket sync :1234 (isolated PORT in subshells).
 
 (
   export HOST=0.0.0.0
