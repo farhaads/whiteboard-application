@@ -1,0 +1,30 @@
+# Deploy from this directory: `cd sync && fly launch` (once) then `fly deploy`.
+# Use a distinct app name from the Next.js app, e.g. whiteboard-application-sync.
+#
+# After deploy, set the same JWT as the web app:
+#   fly secrets set JWT_SECRET="..." -a <this-sync-app-name>
+#
+# On the Next.js Fly app set (no image rebuild required for URL changes):
+#   fly secrets set SYNC_WEBSOCKET_URL="wss://<this-sync-app>.fly.dev"
+#
+# y-websocket keeps each room in memory on one process — use exactly one machine
+# for sync so all clients share one hub (or add Redis-backed persistence later).
+
+app = "whiteboard-application-sync"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 1234
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1

@@ -21,7 +21,8 @@ RUN mkdir -p public
 ENV NEXT_TELEMETRY_DISABLED=1
 # Build must not need a real DB; routes are force-dynamic + lazy DB load.
 ENV JWT_SECRET="build-time-jwt-secret-min-32-chars-placeholder"
-# Client WS URL is baked at build time — override on deploy, e.g.:
+# Optional: bake a public WS URL at build time. Prefer setting
+# SYNC_WEBSOCKET_URL as a Fly secret on the web app (runtime via /api/.../ws-token).
 # fly deploy --build-arg NEXT_PUBLIC_SYNC_URL=wss://your-sync.fly.dev
 ARG NEXT_PUBLIC_SYNC_URL=wss://localhost.invalid
 ENV NEXT_PUBLIC_SYNC_URL=$NEXT_PUBLIC_SYNC_URL

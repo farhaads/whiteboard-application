@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { BOARD_COOKIE, verifyBoardJwt } from "@/lib/boardJwt";
+import { getSyncWebsocketBaseUrl } from "@/lib/syncUrl";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,5 +29,8 @@ export async function GET(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  return NextResponse.json({ token });
+  return NextResponse.json({
+    token,
+    syncUrl: getSyncWebsocketBaseUrl(),
+  });
 }

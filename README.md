@@ -1,38 +1,192 @@
-# whiteboard-application
+# Whiteboard application
 
-Next.js whiteboard app with collaborative sync (Yjs WebSocket server) and Docker Compose for local full-stack dev.
+Real-time collaborative whiteboard: **Next.js** hosts the UI and APIs, **Yjs** syncs document state over WebSockets, and each board is protected by its **own password** (not per-user accounts).
 
-## Prerequisites
+Use this README as a quick tour for demos and onboarding.
 
-- Node.js 20+
-- For Docker: Docker Desktop (or Docker Engine + Compose)
+---
 
-## Run with Docker Compose
+## What you are looking at (30 seconds)
 
-From the repo root:
+| Piece | Role |
+|--------|------|
+| **Next.js 14** (App Router) | Pages, API routes, middleware, image serving |
+| **Konva + react-konva** | 2D canvas drawing (shapes, strokes, images) |
+| **Yjs** | CRDT: merges edits from multiple clients safely |
+| **y-websocket** | Small Node server that forwards Yjs updates between browsers |
+| **Docker Compose** | Runs `web` (Next) + `sync` (WebSocket) together locally |
+
+There is **no** “sign up / log in” product flow. Access is **board ID + board password**. Anyone with both can open that board.
+
+---
+
+## Storage and “databases” (important for demos)
+
+This app uses **three** kinds of persistence; only one is a classic server database.
+
+### 1. SQLite — board registry (`boards.db`)
+
+- **Library:** `better-sqlite3`
+- **Default path:** `data/boards.db` (or `BOARD_DATA_DIR` on Fly: `/data` on a mounted volume)
+- **Schema:** one table `boards`: `id`, `password_hash`, `created_at`
+- **What it stores:** random board IDs and **bcrypt** hashes of the board password (cost factor 10). Plain passwords are never stored.
+- **What it does *not* store:** strokes, shapes, or canvas pixels — those live in Yjs / IndexedDB.
+
+### 2. Browser IndexedDB — local Yjs document cache
+
+- **Library:** `y-indexeddb`
+- **Keyed by:** board id (room name)
+- **What it stores:** a local copy of the **Y.Doc** so reloads and brief offline periods can recover quickly from the browser.
+- **Server:** the sync server does **not** read IndexedDB; it only relays Yjs binary messages between connected clients.
+
+### 3. Filesystem — uploaded images
+
+- **Directory:** `uploads/` by default, or `UPLOAD_DIR` (Docker Compose uses a volume at `/app/uploads`)
+- **Layout:** `{boardId}/{uuid}.{ext}`
+- **Served at:** `/assets/...` via `app/assets/[...path]/route.ts`
+- Uploads require a valid **board session** (same JWT cookie as the canvas).
+
+So in one sentence: **SQLite = “which boards exist and how to verify their password”; IndexedDB = “my copy of the doc in this browser”; disk = “images pasted onto the board”.**
+
+---
+
+## Passwords, sessions, and WebSockets
+
+### Board password (shared secret)
+
+- **Create:** `POST /api/board` → generates a short random id, hashes password with **bcryptjs**, inserts into SQLite.
+- **Unlock:** `POST /api/board/[boardId]/unlock` → loads hash from SQLite, `bcrypt.compareSync`, on success issues a session.
+
+### Session = JWT in an HTTP-only cookie
+
+- **Cookie name:** `board_token`
+- **Token:** HS256 **JWT** (`jose`), payload includes `boardId`, ~**12 hours** TTL (`BOARD_JWT_MAX_AGE_SEC` in `lib/boardJwt.ts`).
+- **Secret:** `JWT_SECRET` (must be set in any real environment; same secret is used by the **sync** server for WebSocket auth).
+- **Cookie flags:** `httpOnly`, `sameSite: lax`, `secure` in production.
+
+**Middleware** (`middleware.ts`) runs on `/board/:boardId/*` except the `/unlock` route: if the cookie JWT is missing, wrong board, or expired, the user is redirected to `/board/[id]/unlock`.
+
+There are **no** server-side sessions in Redis or a `sessions` table — stateless JWT only.
+
+### Why WebSockets need a token too
+
+The Yjs server is a **separate process**. It cannot read your Next.js cookies on the upgrade request the way same-origin `fetch` does.
+
+Flow:
+
+1. Browser loads the board with the cookie session.
+2. Client calls `GET /api/board/[boardId]/ws-token` (with `credentials: "include"`). Next verifies the cookie JWT and returns the **same** JWT in JSON (short-lived use: passed as a query param).
+3. `WebsocketProvider` connects to `NEXT_PUBLIC_SYNC_URL` with `?token=...` and room = `boardId`.
+4. **`sync/index.js`** verifies JWT with `jose`; `payload.boardId` must equal the WebSocket “room” path. Otherwise the socket is closed with **4401 Unauthorized**.
+
+So: **one secret (`JWT_SECRET`)**, **one kind of token** (board JWT), used for both HTTP APIs and the sync server gate.
+
+### Logout
+
+`POST /api/logout` clears `board_token`. The board UI triggers this when leaving (see `BoardCanvas`).
+
+---
+
+## Tech stack (dependencies at a glance)
+
+| Area | Choices |
+|------|---------|
+| Framework | Next.js 14, React 18, TypeScript |
+| Styling | Tailwind CSS 3, UI primitives (e.g. `@base-ui/react`, shadcn-style `components/ui`) |
+| Canvas | Konva, react-konva, perfect-freehand (ink) |
+| Collaboration | yjs, y-websocket, y-indexeddb |
+| Server data | better-sqlite3, bcryptjs |
+| Tokens | jose (JWT) |
+| IDs | nanoid (board ids), uuid (upload files) |
+| Deploy | `Dockerfile` (standalone Next), `fly.toml` (volume for SQLite under `BOARD_DATA_DIR`) |
+
+`next.config.mjs` pins a single Yjs bundle and transpiles Y-related packages to avoid duplicate-Yjs issues with HMR and IndexedDB.
+
+---
+
+## Environment variables
+
+| Variable | Where | Purpose |
+|----------|--------|---------|
+| `JWT_SECRET` | Next + sync | Sign/verify board JWTs (use a long random value in production) |
+| `NEXT_PUBLIC_SYNC_URL` | Next (client fallback) | WebSocket base URL for local dev / build-time; see `SYNC_WEBSOCKET_URL` for Fly |
+| `SYNC_WEBSOCKET_URL` | Next (server → API) | **Preferred in production:** `wss://…` to your sync Fly app; returned to the browser from `/api/board/.../ws-token` so you do **not** need to rebuild for URL changes |
+| `BOARD_DATA_DIR` | Next | SQLite directory (Fly sets `/data` on a volume) |
+| `UPLOAD_DIR` | Next | Image upload root |
+| `NODE_ENV` | Next | `production` enables `secure` cookies |
+
+Copy `.env.local` on each machine; do not commit secrets (see `.gitignore`).
+
+---
+
+## Run locally
+
+### Full stack (recommended for collaboration)
 
 ```bash
 docker compose up
 ```
 
-Then open [http://localhost:3000](http://localhost:3000). The `web` service installs dependencies on first start; `sync` serves the Yjs WebSocket endpoint.
+Open [http://localhost:3000](http://localhost:3000). Compose starts:
 
-Set strong `JWT_SECRET` values in production; the compose file uses development placeholders.
+- **sync** — Yjs WebSocket on port **1234**
+- **web** — Next dev server on port **3000** with `NEXT_PUBLIC_SYNC_URL=ws://localhost:1234`
 
-## Run Next.js only (local)
+The compose file uses a **development** `JWT_SECRET` placeholder — replace for anything shared beyond your laptop.
+
+### Next.js only
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). You will need the sync server and matching env (for example `NEXT_PUBLIC_SYNC_URL`) if you use real-time collaboration.
+You will not get multi-tab / multi-user sync unless the **sync** service is running and `NEXT_PUBLIC_SYNC_URL` points at it.
 
-## Local data
+---
 
-SQLite registry and uploads are ignored by Git (see `.gitignore`). Copy or recreate `.env.local` on each machine; do not commit secrets.
+## Demo script (for your team)
 
-## Learn more
+1. **Create board** — choose a password; note the board id in the URL after redirect to unlock.
+2. **Unlock** — enter password; middleware now allows `/board/{id}`.
+3. **Two browsers** — same board id + password (or share one session by copying cookies — normally two people each unlock). Draw on both; watch live merge (Yjs).
+4. **Explain persistence** — SQLite only knows id + password hash; the drawing is Yjs + IndexedDB + whatever peers have seen; images are files under `uploads/`.
+5. **Security story** — bcrypt for passwords, HTTP-only JWT for session, sync server checks JWT matches room; no shared user database.
 
-- [Next.js documentation](https://nextjs.org/docs)
+---
+
+## Deploy notes (Fly.io)
+
+### Next.js app (`fly.toml` at repo root)
+
+- App process on port **8080** (standalone `server.js`)
+- A **volume** mounted at `/data` for SQLite (`BOARD_DATA_DIR`)
+
+### Real-time collaboration (why teammates saw different boards)
+
+Collaboration is **not** stored in SQLite. Every browser must connect to the **same** Yjs WebSocket server (`sync/`). If the socket never connects (wrong URL, TLS mismatch, sync not deployed, or **multiple sync machines** each with its own memory), each person keeps editing their **local IndexedDB** copy only — it looks like “different sessions.”
+
+Do this on Fly:
+
+1. **Deploy the sync service** as a **second Fly app** (see `sync/fly.toml`). From `sync/`: `fly launch` / `fly deploy`. Rename `app = "…"` in that file if the name is taken.
+2. **One sync machine:** keep `min_machines_running = 1` in `sync/fly.toml` (and do not scale sync horizontally without shared persistence). y-websocket holds each room in **RAM** on one process.
+3. **Same `JWT_SECRET`** on both apps: `fly secrets set JWT_SECRET="…"` on the web app and again on the sync app with the **identical** value.
+4. **Point the web app at sync:** on the **Next.js** app only:
+
+   ```bash
+   fly secrets set SYNC_WEBSOCKET_URL="wss://<your-sync-app>.fly.dev" -a <your-web-app>
+   ```
+
+   The client receives this URL from `GET /api/board/[boardId]/ws-token` (field `syncUrl`), so it uses **runtime** config — no redeploy required when you change the secret.
+
+5. Use **`wss://`** (not `ws://`) when the site is served over HTTPS.
+
+Optional: you can still set `NEXT_PUBLIC_SYNC_URL` at **build** time (`fly deploy --build-arg NEXT_PUBLIC_SYNC_URL=…`) as a fallback; `SYNC_WEBSOCKET_URL` overrides when set on the server.
+
+---
+
+## Further reading
+
+- [Next.js docs](https://nextjs.org/docs)
 - [Yjs](https://yjs.dev/)
+- [y-websocket](https://github.com/yjs/y-websocket)

@@ -29,10 +29,6 @@ export function useYDoc(boardId: string) {
     const persistence = new IndexeddbPersistence(boardId, doc);
     void persistence.whenSynced;
 
-    const base = (
-      process.env.NEXT_PUBLIC_SYNC_URL ?? "ws://localhost:1234"
-    ).replace(/\/$/, "");
-
     void (async () => {
       const res = await fetch(
         `/api/board/${encodeURIComponent(boardId)}/ws-token`,
@@ -43,11 +39,19 @@ export function useYDoc(boardId: string) {
         window.location.href = `/board/${encodeURIComponent(boardId)}/unlock`;
         return;
       }
-      const { token } = (await res.json()) as { token: string };
+      const data = (await res.json()) as {
+        token: string;
+        syncUrl?: string;
+      };
       if (cancelled) return;
+      const base = (
+        data.syncUrl ??
+        process.env.NEXT_PUBLIC_SYNC_URL ??
+        "ws://localhost:1234"
+      ).replace(/\/$/, "");
 
       provider = new WebsocketProvider(base, boardId, doc, {
-        params: { token },
+        params: { token: data.token },
       });
       if (cancelled) {
         provider.destroy();
