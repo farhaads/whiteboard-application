@@ -1,0 +1,29 @@
+volumes:
+  uploads:
+
+services:
+  sync:
+    build: ./sync
+    ports:
+      - "1234:1234"
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "1234"
+      JWT_SECRET: "dev-jwt-secret-change-me-min-32-characters-long"
+
+  web:
+    image: node:20-bookworm-slim
+    working_dir: /app
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - uploads:/app/uploads
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_SYNC_URL: ws://localhost:1234
+      UPLOAD_DIR: /app/uploads
+      JWT_SECRET: "dev-jwt-secret-change-me-min-32-characters-long"
+    command: sh -c "npm install && npm run dev -- --hostname 0.0.0.0 --port 3000"
+    depends_on:
+      - sync

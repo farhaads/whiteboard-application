@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+/sync/node_modules
 /.pnp
 .pnp.js
 .yarn/install-state.gz
@@ -15,6 +16,12 @@
 
 # production
 /build
+
+# uploaded board images (local dev)
+/uploads
+
+# sqlite board registry (local dev)
+/data
 
 # misc
 .DS_Store

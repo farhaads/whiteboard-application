@@ -1,0 +1,15 @@
+{
+  "name": "whiteboard-sync",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "jose": "^5.9.6",
+    "ws": "^8.18.0",
+    "y-websocket": "1.5.0",
+    "yjs": "^13.6.30"
+  }
+}
