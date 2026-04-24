@@ -1,11 +1,17 @@
 import fs from "fs";
 import path from "path";
-import Database from "better-sqlite3";
+import { createRequire } from "module";
 
-let db: Database.Database | undefined;
+const require = createRequire(import.meta.url);
 
-export function getBoardDb(): Database.Database {
+type SqliteDatabase = import("better-sqlite3").Database;
+
+let db: SqliteDatabase | undefined;
+
+export function getBoardDb(): SqliteDatabase {
   if (db) return db;
+  // Defer native binding until first DB use (not when this module is imported at build time).
+  const Database = require("better-sqlite3") as new (path: string) => SqliteDatabase;
   const dataDir = process.env.BOARD_DATA_DIR ?? path.join(process.cwd(), "data");
   fs.mkdirSync(dataDir, { recursive: true });
   db = new Database(path.join(dataDir, "boards.db"));

@@ -4,6 +4,7 @@ import { BOARD_COOKIE, BOARD_JWT_MAX_AGE_SEC, signBoardJwt } from "@/lib/boardJw
 import { getBoardPasswordHash } from "@/lib/boardDb";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 function isSafeBoardId(boardId: string): boolean {
   if (!boardId || boardId.length > 64) return false;

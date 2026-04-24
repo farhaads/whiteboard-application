@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { getUploadDir } from "@/lib/serverUploadDir";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const EXT_MIME: Record<string, string> = {
   png: "image/png",

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { BOARD_COOKIE, verifyBoardJwt } from "@/lib/boardJwt";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 function isSafeBoardId(boardId: string): boolean {
   if (!boardId || boardId.length > 64) return false;

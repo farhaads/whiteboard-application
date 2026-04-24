@@ -1,15 +1,24 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import Database from "better-sqlite3";
 import { customAlphabet } from "nanoid";
 import { insertBoard } from "@/lib/boardDb";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const boardIdAlphabet = customAlphabet(
   "0123456789abcdefghijklmnopqrstuvwxyz",
   10
 );
+
+function isSqliteUniqueConstraint(e: unknown): boolean {
+  if (!e || typeof e !== "object") return false;
+  const code = (e as { code?: string }).code;
+  return (
+    code === "SQLITE_CONSTRAINT_PRIMARYKEY" ||
+    code === "SQLITE_CONSTRAINT_UNIQUE"
+  );
+}
 
 export async function POST(req: Request) {
   let body: unknown;
@@ -40,11 +49,7 @@ export async function POST(req: Request) {
       insertBoard(boardId, hash);
       return NextResponse.json({ boardId });
     } catch (e) {
-      if (
-        e instanceof Database.SqliteError &&
-        (e.code === "SQLITE_CONSTRAINT_PRIMARYKEY" ||
-          e.code === "SQLITE_CONSTRAINT_UNIQUE")
-      ) {
+      if (isSqliteUniqueConstraint(e)) {
         continue;
       }
       throw e;
