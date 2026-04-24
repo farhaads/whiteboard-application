@@ -32,15 +32,25 @@ FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV PORT=8080
-ENV HOSTNAME=0.0.0.0
+ENV ENABLE_SAME_ORIGIN_YJS=1
 RUN addgroup --system --gid 1001 nodejs \
-  && adduser --system --uid 1001 nextjs
+  && adduser --system --uid 1001 nextjs \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends nginx \
+  && rm -rf /var/lib/apt/lists/*
 
+COPY deploy/nginx-fly.conf /etc/nginx/nginx-fly.conf
+COPY deploy/fly-start.sh /app/deploy/fly-start.sh
+RUN chmod +x /app/deploy/fly-start.sh
+
+COPY --from=builder /app/sync/package.json /app/sync/package-lock.json /app/sync/index.js /app/sync/
+WORKDIR /app/sync
+RUN npm ci --omit=dev
+
+WORKDIR /app
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-USER nextjs
 EXPOSE 8080
-CMD ["node", "server.js"]
+CMD ["/app/deploy/fly-start.sh"]

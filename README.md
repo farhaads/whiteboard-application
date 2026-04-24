@@ -164,24 +164,15 @@ You will not get multi-tab / multi-user sync unless the **sync** service is runn
 
 ### Real-time collaboration (why teammates saw different boards)
 
-Collaboration is **not** stored in SQLite. Every browser must connect to the **same** Yjs WebSocket server (`sync/`). If the socket never connects (wrong URL, TLS mismatch, sync not deployed, or **multiple sync machines** each with its own memory), each person keeps editing their **local IndexedDB** copy only — it looks like “different sessions.”
+Collaboration is **not** stored in SQLite. Every browser must connect to the **same** Yjs WebSocket server. If the socket never connects, each person keeps editing their **local IndexedDB** copy only — same board URL, different canvas.
 
-Do this on Fly:
+**Default on Fly (this repo):** the production Docker image runs **nginx** on port 8080, **Next.js** on 3001, and the **`sync/`** y-websocket server on 1234. WebSockets for collaboration use **`wss://<your-host>/yjs-ws/`** (same host as the site). `fly.toml` sets `ENABLE_SAME_ORIGIN_YJS=1`; the `/api/board/.../ws-token` response includes that URL. Deploy with `fly deploy` and ensure **`JWT_SECRET`** is set (shared by Next and sync in one machine).
 
-1. **Deploy the sync service** as a **second Fly app** (see `sync/fly.toml`). From `sync/`: `fly launch` / `fly deploy`. Rename `app = "…"` in that file if the name is taken.
-2. **One sync machine:** keep `min_machines_running = 1` in `sync/fly.toml` (and do not scale sync horizontally without shared persistence). y-websocket holds each room in **RAM** on one process.
-3. **Same `JWT_SECRET`** on both apps: `fly secrets set JWT_SECRET="…"` on the web app and again on the sync app with the **identical** value.
-4. **Point the web app at sync:** on the **Next.js** app only:
+If you previously set **`SYNC_WEBSOCKET_URL`** to a separate sync app, that value **overrides** same-origin — remove the secret (`fly secrets unset SYNC_WEBSOCKET_URL`) if you want the bundled nginx + sync path.
 
-   ```bash
-   fly secrets set SYNC_WEBSOCKET_URL="wss://<your-sync-app>.fly.dev" -a <your-web-app>
-   ```
+**Optional: second Fly app for sync** (see `sync/fly.toml`) — use when you want sync scaled or isolated. Then set `SYNC_WEBSOCKET_URL` on the web app to `wss://<sync-app>.fly.dev`, same `JWT_SECRET` on both apps, and **`min_machines_running = 1`** on sync unless you add shared persistence.
 
-   The client receives this URL from `GET /api/board/[boardId]/ws-token` (field `syncUrl`), so it uses **runtime** config — no redeploy required when you change the secret.
-
-5. Use **`wss://`** (not `ws://`) when the site is served over HTTPS.
-
-Optional: you can still set `NEXT_PUBLIC_SYNC_URL` at **build** time (`fly deploy --build-arg NEXT_PUBLIC_SYNC_URL=…`) as a fallback; `SYNC_WEBSOCKET_URL` overrides when set on the server.
+Use **`wss://`** (not `ws://`) for HTTPS sites. You can still set `NEXT_PUBLIC_SYNC_URL` at build time as a fallback when `SYNC_WEBSOCKET_URL` and same-origin mode are unset.
 
 ---
 

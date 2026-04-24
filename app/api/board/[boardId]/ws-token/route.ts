@@ -14,7 +14,7 @@ function isSafeBoardId(boardId: string): boolean {
 }
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: { boardId: string } }
 ) {
   const boardId = params.boardId;
@@ -31,6 +31,6 @@ export async function GET(
 
   return NextResponse.json({
     token,
-    syncUrl: getSyncWebsocketBaseUrl(),
+    syncUrl: getSyncWebsocketBaseUrl(req),
   });
 }

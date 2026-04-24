@@ -15,6 +15,8 @@ primary_region = "iad"
 
 [env]
   BOARD_DATA_DIR = "/data"
+  # Same Fly machine runs nginx + y-websocket + Next; client uses wss://<host>/yjs-ws/
+  ENABLE_SAME_ORIGIN_YJS = "1"
 
 # SQLite persistence. `source` must match an existing Fly volume name in this region
 # (`fly volumes list -a whiteboard-application`). Change `source` if yours differs.
