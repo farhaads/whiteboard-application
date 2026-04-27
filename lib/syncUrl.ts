@@ -1,11 +1,11 @@
 /**
  * Server-side WebSocket base URL for the Yjs sync server (e.g. ws-token API).
- * Do not read NEXT_PUBLIC_* here — Next inlines those at build time, which broke
- * Fly when the Dockerfile used a placeholder like wss://localhost.invalid.
+ * Do not read NEXT_PUBLIC_* here — Next inlines those at build time, which is
+ * wrong for runtime URLs that depend on the request host.
  *
  * Priority:
- * - SYNC_WEBSOCKET_URL: explicit runtime (Fly secrets, docker-compose)
- * - ENABLE_SAME_ORIGIN_YJS=1 + Request: wss://<host>/yjs-ws/ (nginx + sync in image)
+ * - SYNC_WEBSOCKET_URL: explicit runtime (e.g. docker-compose env, separate sync host)
+ * - ENABLE_SAME_ORIGIN_YJS=1 + Request: wss://<host>/yjs-ws/ (bundled nginx + sync image)
  * - default ws://localhost:1234 (local dev with sync on 1234)
  *
  * Client fallback for dev remains NEXT_PUBLIC_SYNC_URL in hooks/useYDoc.ts only.
@@ -25,9 +25,6 @@ export function buildSameOriginYjsWsUrl(req: Request): string {
   } else if (firstProto === "http") {
     proto = "ws";
   } else if (u.protocol === "https:") {
-    proto = "wss";
-  } else if (host.endsWith(".fly.dev")) {
-    // Fly edge is HTTPS; internal hop may omit X-Forwarded-Proto
     proto = "wss";
   } else {
     proto = "ws";

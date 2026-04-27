@@ -29,7 +29,7 @@ This app uses **three** kinds of persistence; only one is a classic server datab
 ### 1. SQLite — board registry (`boards.db`)
 
 - **Library:** `better-sqlite3`
-- **Default path:** `data/boards.db` (or `BOARD_DATA_DIR` on Fly: `/data` on a mounted volume)
+- **Default path:** `data/boards.db` (or `BOARD_DATA_DIR=/data` in production, backed by a Docker volume)
 - **Schema:** one table `boards`: `id`, `password_hash`, `created_at`
 - **What it stores:** random board IDs and **bcrypt** hashes of the board password (cost factor 10). Plain passwords are never stored.
 - **What it does *not* store:** strokes, shapes, or canvas pixels — those live in Yjs / IndexedDB.
@@ -78,7 +78,7 @@ Flow:
 
 1. Browser loads the board with the cookie session.
 2. Client calls `GET /api/board/[boardId]/ws-token` (with `credentials: "include"`). Next verifies the cookie JWT and returns the **same** JWT in JSON (short-lived use: passed as a query param).
-3. `WebsocketProvider` connects to the `**syncUrl`** from that response (same-origin `/yjs-ws/` on Fly, or `SYNC_WEBSOCKET_URL` / dev default), with `?token=...` and room = `boardId`. The client may fall back to `NEXT_PUBLIC_SYNC_URL` only if `syncUrl` is absent.
+3. `WebsocketProvider` connects to the `**syncUrl`** from that response (in production: `SYNC_WEBSOCKET_URL`, e.g. `wss://whiteboard-sync.farhaadsallie.com`; in local dev: `ws://localhost:1234`), with `?token=...` and room = `boardId`. The client may fall back to `NEXT_PUBLIC_SYNC_URL` only if `syncUrl` is absent.
 4. `**sync/index.js**` verifies JWT with `jose`; `payload.boardId` must equal the WebSocket “room” path. Otherwise the socket is closed with **4401 Unauthorized**.
 
 So: **one secret (`JWT_SECRET`)**, **one kind of token** (board JWT), used for both HTTP APIs and the sync server gate.
@@ -101,7 +101,7 @@ So: **one secret (`JWT_SECRET`)**, **one kind of token** (board JWT), used for b
 | Server data   | better-sqlite3, bcryptjs                                                              |
 | Tokens        | jose (JWT)                                                                            |
 | IDs           | nanoid (board ids), uuid (upload files)                                               |
-| Deploy        | `Dockerfile` (standalone Next), `fly.toml` (volume for SQLite under `BOARD_DATA_DIR`) |
+| Deploy        | `Dockerfile` (standalone Next), `sync/Dockerfile` (y-websocket), `docker-compose.prod.yml` (two services, named volumes for `BOARD_DATA_DIR` and `UPLOAD_DIR`) |
 
 
 `next.config.mjs` pins a single Yjs bundle and transpiles Y-related packages to avoid duplicate-Yjs issues with HMR and IndexedDB.
@@ -113,13 +113,13 @@ So: **one secret (`JWT_SECRET`)**, **one kind of token** (board JWT), used for b
 
 | Variable                 | Where                                                 | Purpose                                                                                                                       |
 | ------------------------ | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `JWT_SECRET`             | Next + sync                                           | Sign/verify board JWTs (use a long random value in production)                                                                |
-| `NEXT_PUBLIC_SYNC_URL`   | Next **client only** (optional fallback in `useYDoc`) | Local dev / emergency client fallback — **not** read by `/api/.../ws-token` (Next would bake `NEXT_PUBLIC_`* at build time)   |
-| `SYNC_WEBSOCKET_URL`     | Next **server** (runtime)                             | Optional explicit `wss://…`; if unset and `ENABLE_SAME_ORIGIN_YJS=1`, ws-token derives `wss://<host>/yjs-ws` from the request |
-| `ENABLE_SAME_ORIGIN_YJS` | Next (server)                                         | `1` = bundled nginx + sync on same host (`fly.toml` + Docker image)                                                           |
-| `BOARD_DATA_DIR`         | Next                                                  | SQLite directory (Fly sets `/data` on a volume)                                                                               |
-| `UPLOAD_DIR`             | Next                                                  | Image upload root                                                                                                             |
-| `NODE_ENV`               | Next                                                  | `production` enables `secure` cookies                                                                                         |
+| `JWT_SECRET`             | Next + sync                                           | Sign/verify board JWTs. Same value on both services. Use ≥32 random chars in production.                                      |
+| `SYNC_WEBSOCKET_URL`     | Next **server** (runtime)                             | Public WebSocket base for the sync server, e.g. `wss://whiteboard-sync.farhaadsallie.com`. Returned to clients by `ws-token`. |
+| `NEXT_PUBLIC_SYNC_URL`   | Next **client only** (optional fallback in `useYDoc`) | Local dev / emergency client fallback — **not** read by `/api/.../ws-token` (Next inlines `NEXT_PUBLIC_*` at build time).     |
+| `ENABLE_SAME_ORIGIN_YJS` | Next (server)                                         | Optional. `1` makes ws-token derive `wss://<host>/yjs-ws` from the request (only if you put a reverse proxy in front).         |
+| `BOARD_DATA_DIR`         | Next                                                  | SQLite directory. Production: `/data`, backed by the `boards-db` Docker named volume.                                          |
+| `UPLOAD_DIR`             | Next                                                  | Image upload root. Production: `/app/uploads`, backed by the `uploads` Docker named volume.                                    |
+| `NODE_ENV`               | Next                                                  | `production` enables `secure` cookies.                                                                                         |
 
 
 Copy `.env.local` on each machine; do not commit secrets (see `.gitignore`).
@@ -162,24 +162,64 @@ You will not get multi-tab / multi-user sync unless the **sync** service is runn
 
 ---
 
-## Deploy notes (Fly.io)
+## Deploy notes (Proxmox VM + Cloudflare Tunnel)
 
-### Next.js app (`fly.toml` at repo root)
+### Topology
 
-- App process on port **8080** (standalone `server.js`)
-- A **volume** mounted at `/data` for SQLite (`BOARD_DATA_DIR`)
+Two containers, no reverse proxy in the stack — Cloudflare Tunnel routes each hostname to one container:
 
-### Real-time collaboration (why teammates saw different boards)
+| Hostname                              | Container | Port | What it serves                              |
+| ------------------------------------- | --------- | ---- | ------------------------------------------- |
+| `whiteboard.farhaadsallie.com`        | `web`     | 3000 | Next.js standalone (UI + API + middleware)  |
+| `whiteboard-sync.farhaadsallie.com`   | `sync`    | 1234 | y-websocket (Yjs collaboration)             |
 
-Collaboration is **not** stored in SQLite. Every browser must connect to the **same** Yjs WebSocket server. If the socket never connects, each person keeps editing their **local IndexedDB** copy only — same board URL, different canvas.
+The browser hits `whiteboard.farhaadsallie.com`, unlocks the board, calls `/api/board/[boardId]/ws-token`, then opens a WebSocket to `wss://whiteboard-sync.farhaadsallie.com/<boardId>?token=<jwt>`. The sync server verifies the JWT (no cookies needed — it's same `JWT_SECRET`, query-param auth) and joins the client to that room.
 
-**Default on Fly (this repo):** the production Docker image runs **nginx** on port 8080, **Next.js** on 3001, and the `**sync/`** y-websocket server on 1234. WebSockets for collaboration use `**wss://<your-host>/yjs-ws/**` (same host as the site). `fly.toml` sets `ENABLE_SAME_ORIGIN_YJS=1`; the `/api/board/.../ws-token` response includes that URL. Deploy with `fly deploy` and ensure `**JWT_SECRET**` is set (shared by Next and sync in one machine).
+### One-time VM setup (Debian CT, e.g. `192.168.68.52`)
 
-If you previously set `**SYNC_WEBSOCKET_URL**` to a separate sync app, that value **overrides** same-origin — remove the secret (`fly secrets unset SYNC_WEBSOCKET_URL`) if you want the bundled nginx + sync path.
+```bash
+apt update && apt install -y docker.io docker-compose-plugin git
+git clone https://github.com/farhaads/whiteboard-application.git
+cd whiteboard-application
+echo "JWT_SECRET=$(openssl rand -hex 48)" > .env
+docker compose -f docker-compose.prod.yml up -d --build
+```
 
-**Optional: second Fly app for sync** (see `sync/fly.toml`) — use when you want sync scaled or isolated. Then set `SYNC_WEBSOCKET_URL` on the web app to `wss://<sync-app>.fly.dev`, same `JWT_SECRET` on both apps, and `**min_machines_running = 1`** on sync unless you add shared persistence.
+Persistent state lives in two Docker named volumes managed by `docker-compose.prod.yml`:
 
-Use `**wss://**` (not `ws://`) for HTTPS sites. The ws-token `**syncUrl**` comes from `**SYNC_WEBSOCKET_URL**` or same-origin derivation — not from `NEXT_PUBLIC_*` on the server.
+- `boards-db` → SQLite registry (`/data` inside the `web` container, `BOARD_DATA_DIR`)
+- `uploads`   → image uploads (`/app/uploads`, `UPLOAD_DIR`)
+
+The `sync` container is stateless — Yjs rooms live in memory. Restart it freely; clients reconnect and resync from peers / IndexedDB.
+
+### Cloudflare tunnel ingress
+
+Add **both** entries to your `cloudflared` config above the catch-all 404:
+
+```yaml
+- hostname: whiteboard.farhaadsallie.com
+  service: http://192.168.68.52:3000
+- hostname: whiteboard-sync.farhaadsallie.com
+  service: http://192.168.68.52:1234
+```
+
+Then add a Cloudflare DNS record for `whiteboard-sync` pointing at the same tunnel UUID (or rely on `*.farhaadsallie.com` if you have a wildcard). Cloudflare terminates TLS at the edge and forwards plain HTTP to the VM with `X-Forwarded-Proto: https`, so:
+
+- Next sees the request as HTTPS and the `secure` cookie flag on `board_token` works (gated on `NODE_ENV=production`).
+- The WebSocket upgrade is `wss://` at the edge, plain `ws://` between Cloudflare and the VM — the JWT in the query param authenticates regardless.
+
+### Override / scale-out
+
+`SYNC_WEBSOCKET_URL` in `docker-compose.prod.yml` points the web container at the public sync host. Override it via `.env` if you move sync to another VM, change the hostname, or run multiple sync replicas behind a load balancer:
+
+```bash
+echo "SYNC_WEBSOCKET_URL=wss://sync.example.com" >> .env
+docker compose -f docker-compose.prod.yml up -d
+```
+
+Both containers must always share the **same** `JWT_SECRET`. Note that `y-websocket` keeps each room in memory in a single process — if you scale the sync container beyond one replica, all clients in a room must hit the same instance (sticky sessions) or you'll need a Redis-backed persistence layer.
+
+Use `wss://` (not `ws://`) for HTTPS sites. The ws-token `syncUrl` comes from `SYNC_WEBSOCKET_URL` (server-side env), not from `NEXT_PUBLIC_*` on the server.
 
 ---
 

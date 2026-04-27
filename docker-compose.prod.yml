@@ -1,0 +1,49 @@
+# Production compose for the Proxmox VM (Debian + Docker).
+# Two containers, no nginx — the y-websocket sync server is exposed on its own
+# hostname through Cloudflare Tunnel.
+#
+# Topology:
+#   whiteboard.farhaadsallie.com       -> http://192.168.68.52:3000  (Next.js)
+#   whiteboard-sync.farhaadsallie.com  -> http://192.168.68.52:1234  (y-websocket)
+#
+# Usage on the VM:
+#   echo "JWT_SECRET=$(openssl rand -hex 48)" > .env
+#   docker compose -f docker-compose.prod.yml up -d --build
+
+services:
+  web:
+    build: .
+    image: whiteboard-web:latest
+    container_name: whiteboard-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      BOARD_DATA_DIR: /data
+      UPLOAD_DIR: /app/uploads
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env (>=32 chars)}
+      # Same JWT_SECRET on both services. Clients hit Next first for /api/.../ws-token,
+      # then upgrade to wss://<this URL>/<boardId>?token=<jwt>.
+      SYNC_WEBSOCKET_URL: ${SYNC_WEBSOCKET_URL:-wss://whiteboard-sync.farhaadsallie.com}
+    volumes:
+      - boards-db:/data
+      - uploads:/app/uploads
+    depends_on:
+      - sync
+
+  sync:
+    build: ./sync
+    image: whiteboard-sync:latest
+    container_name: whiteboard-sync
+    restart: unless-stopped
+    ports:
+      - "1234:1234"
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "1234"
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env (>=32 chars)}
+
+volumes:
+  boards-db:
+  uploads:
