@@ -8,13 +8,15 @@ Use this README as a quick tour for demos and onboarding.
 
 ## What you are looking at (30 seconds)
 
-| Piece | Role |
-|--------|------|
-| **Next.js 14** (App Router) | Pages, API routes, middleware, image serving |
-| **Konva + react-konva** | 2D canvas drawing (shapes, strokes, images) |
-| **Yjs** | CRDT: merges edits from multiple clients safely |
-| **y-websocket** | Small Node server that forwards Yjs updates between browsers |
-| **Docker Compose** | Runs `web` (Next) + `sync` (WebSocket) together locally |
+
+| Piece                       | Role                                                         |
+| --------------------------- | ------------------------------------------------------------ |
+| **Next.js 14** (App Router) | Pages, API routes, middleware, image serving                 |
+| **Konva + react-konva**     | 2D canvas drawing (shapes, strokes, images)                  |
+| **Yjs**                     | CRDT: merges edits from multiple clients safely              |
+| **y-websocket**             | Small Node server that forwards Yjs updates between browsers |
+| **Docker Compose**          | Runs `web` (Next) + `sync` (WebSocket) together locally      |
+
 
 There is **no** “sign up / log in” product flow. Access is **board ID + board password**. Anyone with both can open that board.
 
@@ -76,8 +78,8 @@ Flow:
 
 1. Browser loads the board with the cookie session.
 2. Client calls `GET /api/board/[boardId]/ws-token` (with `credentials: "include"`). Next verifies the cookie JWT and returns the **same** JWT in JSON (short-lived use: passed as a query param).
-3. `WebsocketProvider` connects to the **`syncUrl`** from that response (same-origin `/yjs-ws/` on Fly, or `SYNC_WEBSOCKET_URL` / dev default), with `?token=...` and room = `boardId`. The client may fall back to `NEXT_PUBLIC_SYNC_URL` only if `syncUrl` is absent.
-4. **`sync/index.js`** verifies JWT with `jose`; `payload.boardId` must equal the WebSocket “room” path. Otherwise the socket is closed with **4401 Unauthorized**.
+3. `WebsocketProvider` connects to the `**syncUrl`** from that response (same-origin `/yjs-ws/` on Fly, or `SYNC_WEBSOCKET_URL` / dev default), with `?token=...` and room = `boardId`. The client may fall back to `NEXT_PUBLIC_SYNC_URL` only if `syncUrl` is absent.
+4. `**sync/index.js**` verifies JWT with `jose`; `payload.boardId` must equal the WebSocket “room” path. Otherwise the socket is closed with **4401 Unauthorized**.
 
 So: **one secret (`JWT_SECRET`)**, **one kind of token** (board JWT), used for both HTTP APIs and the sync server gate.
 
@@ -89,16 +91,18 @@ So: **one secret (`JWT_SECRET`)**, **one kind of token** (board JWT), used for b
 
 ## Tech stack (dependencies at a glance)
 
-| Area | Choices |
-|------|---------|
-| Framework | Next.js 14, React 18, TypeScript |
-| Styling | Tailwind CSS 3, UI primitives (e.g. `@base-ui/react`, shadcn-style `components/ui`) |
-| Canvas | Konva, react-konva, perfect-freehand (ink) |
-| Collaboration | yjs, y-websocket, y-indexeddb |
-| Server data | better-sqlite3, bcryptjs |
-| Tokens | jose (JWT) |
-| IDs | nanoid (board ids), uuid (upload files) |
-| Deploy | `Dockerfile` (standalone Next), `fly.toml` (volume for SQLite under `BOARD_DATA_DIR`) |
+
+| Area          | Choices                                                                               |
+| ------------- | ------------------------------------------------------------------------------------- |
+| Framework     | Next.js 14, React 18, TypeScript                                                      |
+| Styling       | Tailwind CSS 3, UI primitives (e.g. `@base-ui/react`, shadcn-style `components/ui`)   |
+| Canvas        | Konva, react-konva, perfect-freehand (ink)                                            |
+| Collaboration | yjs, y-websocket, y-indexeddb                                                         |
+| Server data   | better-sqlite3, bcryptjs                                                              |
+| Tokens        | jose (JWT)                                                                            |
+| IDs           | nanoid (board ids), uuid (upload files)                                               |
+| Deploy        | `Dockerfile` (standalone Next), `fly.toml` (volume for SQLite under `BOARD_DATA_DIR`) |
+
 
 `next.config.mjs` pins a single Yjs bundle and transpiles Y-related packages to avoid duplicate-Yjs issues with HMR and IndexedDB.
 
@@ -106,15 +110,17 @@ So: **one secret (`JWT_SECRET`)**, **one kind of token** (board JWT), used for b
 
 ## Environment variables
 
-| Variable | Where | Purpose |
-|----------|--------|---------|
-| `JWT_SECRET` | Next + sync | Sign/verify board JWTs (use a long random value in production) |
-| `NEXT_PUBLIC_SYNC_URL` | Next **client only** (optional fallback in `useYDoc`) | Local dev / emergency client fallback — **not** read by `/api/.../ws-token` (Next would bake `NEXT_PUBLIC_*` at build time) |
-| `SYNC_WEBSOCKET_URL` | Next **server** (runtime) | Optional explicit `wss://…`; if unset and `ENABLE_SAME_ORIGIN_YJS=1`, ws-token derives `wss://<host>/yjs-ws` from the request |
-| `ENABLE_SAME_ORIGIN_YJS` | Next (server) | `1` = bundled nginx + sync on same host (`fly.toml` + Docker image) |
-| `BOARD_DATA_DIR` | Next | SQLite directory (Fly sets `/data` on a volume) |
-| `UPLOAD_DIR` | Next | Image upload root |
-| `NODE_ENV` | Next | `production` enables `secure` cookies |
+
+| Variable                 | Where                                                 | Purpose                                                                                                                       |
+| ------------------------ | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `JWT_SECRET`             | Next + sync                                           | Sign/verify board JWTs (use a long random value in production)                                                                |
+| `NEXT_PUBLIC_SYNC_URL`   | Next **client only** (optional fallback in `useYDoc`) | Local dev / emergency client fallback — **not** read by `/api/.../ws-token` (Next would bake `NEXT_PUBLIC_`* at build time)   |
+| `SYNC_WEBSOCKET_URL`     | Next **server** (runtime)                             | Optional explicit `wss://…`; if unset and `ENABLE_SAME_ORIGIN_YJS=1`, ws-token derives `wss://<host>/yjs-ws` from the request |
+| `ENABLE_SAME_ORIGIN_YJS` | Next (server)                                         | `1` = bundled nginx + sync on same host (`fly.toml` + Docker image)                                                           |
+| `BOARD_DATA_DIR`         | Next                                                  | SQLite directory (Fly sets `/data` on a volume)                                                                               |
+| `UPLOAD_DIR`             | Next                                                  | Image upload root                                                                                                             |
+| `NODE_ENV`               | Next                                                  | `production` enables `secure` cookies                                                                                         |
+
 
 Copy `.env.local` on each machine; do not commit secrets (see `.gitignore`).
 
@@ -167,13 +173,13 @@ You will not get multi-tab / multi-user sync unless the **sync** service is runn
 
 Collaboration is **not** stored in SQLite. Every browser must connect to the **same** Yjs WebSocket server. If the socket never connects, each person keeps editing their **local IndexedDB** copy only — same board URL, different canvas.
 
-**Default on Fly (this repo):** the production Docker image runs **nginx** on port 8080, **Next.js** on 3001, and the **`sync/`** y-websocket server on 1234. WebSockets for collaboration use **`wss://<your-host>/yjs-ws/`** (same host as the site). `fly.toml` sets `ENABLE_SAME_ORIGIN_YJS=1`; the `/api/board/.../ws-token` response includes that URL. Deploy with `fly deploy` and ensure **`JWT_SECRET`** is set (shared by Next and sync in one machine).
+**Default on Fly (this repo):** the production Docker image runs **nginx** on port 8080, **Next.js** on 3001, and the `**sync/`** y-websocket server on 1234. WebSockets for collaboration use `**wss://<your-host>/yjs-ws/**` (same host as the site). `fly.toml` sets `ENABLE_SAME_ORIGIN_YJS=1`; the `/api/board/.../ws-token` response includes that URL. Deploy with `fly deploy` and ensure `**JWT_SECRET**` is set (shared by Next and sync in one machine).
 
-If you previously set **`SYNC_WEBSOCKET_URL`** to a separate sync app, that value **overrides** same-origin — remove the secret (`fly secrets unset SYNC_WEBSOCKET_URL`) if you want the bundled nginx + sync path.
+If you previously set `**SYNC_WEBSOCKET_URL**` to a separate sync app, that value **overrides** same-origin — remove the secret (`fly secrets unset SYNC_WEBSOCKET_URL`) if you want the bundled nginx + sync path.
 
-**Optional: second Fly app for sync** (see `sync/fly.toml`) — use when you want sync scaled or isolated. Then set `SYNC_WEBSOCKET_URL` on the web app to `wss://<sync-app>.fly.dev`, same `JWT_SECRET` on both apps, and **`min_machines_running = 1`** on sync unless you add shared persistence.
+**Optional: second Fly app for sync** (see `sync/fly.toml`) — use when you want sync scaled or isolated. Then set `SYNC_WEBSOCKET_URL` on the web app to `wss://<sync-app>.fly.dev`, same `JWT_SECRET` on both apps, and `**min_machines_running = 1`** on sync unless you add shared persistence.
 
-Use **`wss://`** (not `ws://`) for HTTPS sites. The ws-token **`syncUrl`** comes from **`SYNC_WEBSOCKET_URL`** or same-origin derivation — not from `NEXT_PUBLIC_*` on the server.
+Use `**wss://**` (not `ws://`) for HTTPS sites. The ws-token `**syncUrl**` comes from `**SYNC_WEBSOCKET_URL**` or same-origin derivation — not from `NEXT_PUBLIC_*` on the server.
 
 ---
 
@@ -182,3 +188,4 @@ Use **`wss://`** (not `ws://`) for HTTPS sites. The ws-token **`syncUrl`** comes
 - [Next.js docs](https://nextjs.org/docs)
 - [Yjs](https://yjs.dev/)
 - [y-websocket](https://github.com/yjs/y-websocket)
+
