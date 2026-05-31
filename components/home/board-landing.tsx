@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { getStoredDisplayName, setStoredDisplayName } from "@/lib/displayName";
 
 type Tab = "create" | "open";
 
@@ -13,8 +14,13 @@ export function BoardLanding() {
   const [createPassword, setCreatePassword] = useState("");
   const [openBoardId, setOpenBoardId] = useState("");
   const [openPassword, setOpenPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setDisplayName(getStoredDisplayName());
+  }, []);
 
   async function onCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -51,6 +57,7 @@ export function BoardLanding() {
         setError("Board ID is required");
         return;
       }
+      setStoredDisplayName(displayName);
       const res = await fetch(`/api/board/${encodeURIComponent(id)}/unlock`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -179,6 +186,21 @@ export function BoardLanding() {
                 onChange={(e) => setOpenPassword(e.target.value)}
                 className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground shadow-sm outline-none transition focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
                 placeholder="Board password"
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="open-name" className="text-sm font-medium text-foreground">
+                Display name <span className="text-muted-foreground">(optional)</span>
+              </label>
+              <input
+                id="open-name"
+                type="text"
+                autoComplete="nickname"
+                maxLength={40}
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground shadow-sm outline-none transition focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+                placeholder="Shown on your cursor to others"
               />
             </div>
             <Button type="submit" className="w-full" disabled={loading}>

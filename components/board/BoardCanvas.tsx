@@ -38,6 +38,10 @@ import {
   SendToBack,
   Image as ImageIcon,
   LogOut,
+  Menu,
+  Palette,
+  Download,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -55,11 +59,25 @@ import { useYDoc } from "@/hooks/useYDoc";
 import { useShapes } from "@/hooks/useShapes";
 import { useYUndo } from "@/hooks/useYUndo";
 import { BoardImageShape } from "@/components/board/BoardImageShape";
+import { getStoredDisplayName } from "@/lib/displayName";
 
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 5;
 const DEFAULT_FILL = "#fde68a";
 const DEFAULT_STROKE = "#1e293b";
+
+const COLOR_PRESETS = [
+  "#1e293b",
+  "#ef4444",
+  "#f97316",
+  "#fde68a",
+  "#22c55e",
+  "#14b8a6",
+  "#3b82f6",
+  "#8b5cf6",
+  "#ec4899",
+  "#ffffff",
+];
 
 function toolbarButtonVariant(active: boolean): "default" | "secondary" {
   return active ? "default" : "secondary";
@@ -75,7 +93,7 @@ type RemotePeerState = {
   clientId: number;
   cursor?: { x: number; y: number } | null;
   selection?: string[];
-  user?: { color: string; clientId: number };
+  user?: { color: string; clientId: number; name?: string };
 };
 
 function normalizeRect(x0: number, y0: number, x1: number, y1: number) {
@@ -85,6 +103,23 @@ function normalizeRect(x0: number, y0: number, x1: number, y1: number) {
     width: Math.abs(x1 - x0),
     height: Math.abs(y1 - y0),
   };
+}
+
+/** Deep-clone a shape with a fresh id, shifted by (dx, dy). */
+function cloneShapeWithOffset(shape: Shape, dx: number, dy: number): Shape {
+  const copy = JSON.parse(JSON.stringify(shape)) as Shape;
+  copy.id = newId();
+  copy.x += dx;
+  copy.y += dy;
+  if (copy.type === "arrow") {
+    copy.points = [
+      copy.points[0] + dx,
+      copy.points[1] + dy,
+      copy.points[2] + dx,
+      copy.points[3] + dy,
+    ];
+  }
+  return copy;
 }
 
 function useViewportSize() {
@@ -123,12 +158,16 @@ export function BoardCanvas({ boardId }: { boardId: string }) {
     useShapes(ydoc);
   const { undo, redo } = useYUndo(ydoc);
   const [tool, setTool] = useState<Tool>("select");
+  const [toolbarOpen, setToolbarOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [textEdit, setTextEdit] = useState<TextEditState | null>(null);
   const textEditRef = useRef<TextEditState | null>(null);
   textEditRef.current = textEdit;
   const shapesRef = useRef(shapes);
   shapesRef.current = shapes;
+  const selectedIdRef = useRef<string | null>(null);
+  selectedIdRef.current = selectedId;
+  const clipboardRef = useRef<Shape | null>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   const textEditorOpenedForId = useRef<string | null>(null);
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
@@ -139,6 +178,7 @@ export function BoardCanvas({ boardId }: { boardId: string }) {
   const panStart = useRef({ x: 0, y: 0, sx: 0, sy: 0 });
   const shapeRefs = useRef<Map<string, Konva.Group>>(new Map());
   const transformerRef = useRef<Konva.Transformer>(null);
+  const presenceLayerRef = useRef<Konva.Layer>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const lastPointerStageRef = useRef<{ x: number; y: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -272,9 +312,11 @@ export function BoardCanvas({ boardId }: { boardId: string }) {
 
   useEffect(() => {
     if (!awareness) return;
+    const name = getStoredDisplayName();
     awareness.setLocalStateField("user", {
       color: colorFromClientId(awareness.clientID),
       clientId: awareness.clientID,
+      ...(name ? { name } : {}),
     });
   }, [awareness]);
 
@@ -323,7 +365,12 @@ export function BoardCanvas({ boardId }: { boardId: string }) {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLTextAreaElement) return;
+      if (
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLInputElement
+      ) {
+        return;
+      }
       if (e.code === "Space") {
         e.preventDefault();
         spaceDown.current = true;
@@ -333,6 +380,39 @@ export function BoardCanvas({ boardId }: { boardId: string }) {
         e.preventDefault();
         if (e.shiftKey) redo();
         else undo();
+        return;
+      }
+
+      const selId = selectedIdRef.current;
+
+      if (mod && (e.key === "c" || e.key === "x")) {
+        if (!selId) return;
+        const shape = shapesRef.current.find((s) => s.id === selId);
+        if (!shape) return;
+        e.preventDefault();
+        clipboardRef.current = JSON.parse(JSON.stringify(shape)) as Shape;
+        if (e.key === "x") {
+          setSelectedId(null);
+          removeShape(selId);
+        }
+        return;
+      }
+
+      if (mod && e.key === "v") {
+        const src = clipboardRef.current;
+        if (!src) return;
+        e.preventDefault();
+        const copy = cloneShapeWithOffset(src, 20, 20);
+        addShape(copy);
+        setSelectedId(copy.id);
+        return;
+      }
+
+      if (e.key === "Delete" || e.key === "Backspace") {
+        if (!selId) return;
+        e.preventDefault();
+        setSelectedId(null);
+        removeShape(selId);
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
@@ -344,7 +424,7 @@ export function BoardCanvas({ boardId }: { boardId: string }) {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [redo, undo]);
+  }, [addShape, redo, removeShape, undo]);
 
   useEffect(() => {
     const onDragOver = (e: DragEvent) => {
@@ -950,6 +1030,146 @@ export function BoardCanvas({ boardId }: { boardId: string }) {
     setTextEdit(null);
   }, []);
 
+  const selectedShape = useMemo(
+    () => (selectedId ? shapes.find((s) => s.id === selectedId) ?? null : null),
+    [selectedId, shapes]
+  );
+
+  const applyColor = useCallback(
+    (color: string) => {
+      const shape = selectedShape;
+      if (!shape) return;
+      if (shape.type === "rectangle") {
+        replaceShape({ ...shape, fill: color });
+        return;
+      }
+      if (shape.type === "ellipse") {
+        replaceShape({ ...shape, fill: color });
+        return;
+      }
+      if (shape.type === "text") {
+        replaceShape({ ...shape, fill: color });
+        return;
+      }
+      if (shape.type === "freehand") {
+        replaceShape({ ...shape, fill: color });
+        return;
+      }
+      if (shape.type === "sticky") {
+        replaceShape({
+          ...shape,
+          fill: color,
+          textFill: contrastingTextColor(color),
+        });
+        return;
+      }
+      if (shape.type === "arrow") {
+        replaceShape({ ...shape, stroke: color, fill: color });
+      }
+    },
+    [replaceShape, selectedShape]
+  );
+
+  const colorPaletteVisible =
+    tool === "select" && selectedShape != null && selectedShape.type !== "image";
+
+  const currentShapeColor = useMemo(() => {
+    if (!selectedShape) return null;
+    if (selectedShape.type === "arrow") return selectedShape.stroke;
+    if (selectedShape.type === "image") return null;
+    return selectedShape.fill;
+  }, [selectedShape]);
+
+  const exportBoard = useCallback(
+    async (format: "jpeg" | "pdf") => {
+      const stage = stageRef.current;
+      const list = shapesRef.current;
+      if (!stage || list.length === 0) return;
+
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (const s of list) {
+        const b = shapeWorldBounds(s);
+        minX = Math.min(minX, b.x);
+        minY = Math.min(minY, b.y);
+        maxX = Math.max(maxX, b.x + b.width);
+        maxY = Math.max(maxY, b.y + b.height);
+      }
+      if (!Number.isFinite(minX)) return;
+
+      const pad = 24;
+      minX -= pad;
+      minY -= pad;
+      maxX += pad;
+      maxY += pad;
+      const width = Math.max(1, Math.round(maxX - minX));
+      const height = Math.max(1, Math.round(maxY - minY));
+
+      const prevPos = stage.position();
+      const prevScale = stage.scale() ?? { x: 1, y: 1 };
+      const tr = transformerRef.current;
+      const trVisible = tr?.visible() ?? false;
+      const presence = presenceLayerRef.current;
+      const presenceVisible = presence?.visible() ?? false;
+
+      let pngUrl: string;
+      try {
+        tr?.visible(false);
+        presence?.visible(false);
+        stage.scale({ x: 1, y: 1 });
+        stage.position({ x: -minX, y: -minY });
+        stage.draw();
+        pngUrl = stage.toDataURL({ x: 0, y: 0, width, height, pixelRatio: 2 });
+      } finally {
+        tr?.visible(trVisible);
+        presence?.visible(presenceVisible);
+        stage.scale(prevScale);
+        stage.position(prevPos);
+        stage.draw();
+      }
+
+      // Composite onto a white background (JPEG/PDF have no transparency).
+      const img = new window.Image();
+      try {
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = () => reject(new Error("decode"));
+          img.src = pngUrl;
+        });
+      } catch {
+        return;
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0);
+      const jpegUrl = canvas.toDataURL("image/jpeg", 0.92);
+
+      if (format === "jpeg") {
+        const a = document.createElement("a");
+        a.href = jpegUrl;
+        a.download = `board-${boardId}.jpg`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        return;
+      }
+
+      const { jsPDF } = await import("jspdf");
+      const orientation = width >= height ? "landscape" : "portrait";
+      const pdf = new jsPDF({ orientation, unit: "px", format: [width, height] });
+      pdf.addImage(jpegUrl, "JPEG", 0, 0, width, height);
+      pdf.save(`board-${boardId}.pdf`);
+    },
+    [boardId]
+  );
+
   const onTextDblClick = useCallback(
     (shape: TextShape | StickyShape, e: Konva.KonvaEventObject<MouseEvent>) => {
       e.cancelBubble = true;
@@ -1208,6 +1428,7 @@ export function BoardCanvas({ boardId }: { boardId: string }) {
         return null;
       }
       const color = peer.user?.color ?? colorFromClientId(peer.clientId);
+      const label = peer.user?.name?.trim() || "Guest";
       return (
         <Group key={`rp-cursor-${peer.clientId}`} x={c.x} y={c.y} listening={false}>
           <Line
@@ -1227,7 +1448,7 @@ export function BoardCanvas({ boardId }: { boardId: string }) {
           <Text
             x={10}
             y={-6}
-            text={`${peer.clientId}`}
+            text={label}
             fontSize={11}
             fontFamily="system-ui, sans-serif"
             fill={color}
@@ -1317,7 +1538,23 @@ export function BoardCanvas({ boardId }: { boardId: string }) {
         </>
       ) : null}
 
-      <div className="pointer-events-none absolute left-3 top-3 z-10 flex max-w-[min(calc(100vw-1.5rem),720px)] flex-wrap items-center gap-1 rounded-lg border border-border bg-card/95 p-1.5 shadow-sm backdrop-blur pointer-events-auto">
+      <div
+        className="absolute left-3 top-3 z-10"
+        onMouseEnter={() => setToolbarOpen(true)}
+        onMouseLeave={() => setToolbarOpen(false)}
+      >
+        {!(toolbarOpen || tool !== "select") ? (
+          <Button
+            size="icon-sm"
+            variant="secondary"
+            aria-label="Show toolbar"
+            className="shadow-sm"
+            onClick={() => setToolbarOpen(true)}
+          >
+            <Menu />
+          </Button>
+        ) : (
+      <div className="flex max-w-[min(calc(100vw-1.5rem),720px)] flex-wrap items-center gap-1 rounded-lg border border-border bg-card/95 p-1.5 shadow-sm backdrop-blur">
         <Button
           size="icon-sm"
           variant={toolbarButtonVariant(tool === "select")}
@@ -1453,6 +1690,28 @@ export function BoardCanvas({ boardId }: { boardId: string }) {
           className="mx-0.5 inline-block h-6 w-px shrink-0 self-center bg-border"
           aria-hidden
         />
+        <span
+          className="mx-0.5 inline-block h-6 w-px shrink-0 self-center bg-border"
+          aria-hidden
+        />
+        <Button
+          size="icon-sm"
+          variant="secondary"
+          aria-label="Export as JPEG"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => exportBoard("jpeg")}
+        >
+          <Download />
+        </Button>
+        <Button
+          size="icon-sm"
+          variant="secondary"
+          aria-label="Export as PDF"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => exportBoard("pdf")}
+        >
+          <FileText />
+        </Button>
         <Button
           size="icon-sm"
           variant="outline"
@@ -1463,6 +1722,29 @@ export function BoardCanvas({ boardId }: { boardId: string }) {
           <LogOut />
         </Button>
       </div>
+        )}
+      </div>
+
+      {colorPaletteVisible ? (
+        <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border bg-card/95 px-3 py-2 shadow-md backdrop-blur">
+          <Palette className="size-4 shrink-0 text-muted-foreground" />
+          {COLOR_PRESETS.map((c) => (
+            <button
+              key={c}
+              type="button"
+              aria-label={`Set color ${c}`}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => applyColor(c)}
+              className={cn(
+                "size-6 rounded-full border border-black/10 shadow-sm transition hover:scale-110",
+                currentShapeColor?.toLowerCase() === c.toLowerCase() &&
+                  "ring-2 ring-ring ring-offset-2 ring-offset-card"
+              )}
+              style={{ backgroundColor: c }}
+            />
+          ))}
+        </div>
+      ) : null}
 
       <Stage
         ref={stageRef}
@@ -1498,7 +1780,7 @@ export function BoardCanvas({ boardId }: { boardId: string }) {
             }}
           />
         </Layer>
-        <Layer listening={false}>
+        <Layer ref={presenceLayerRef} listening={false}>
           {remotePresenceNodes.selectionRects}
           {remotePresenceNodes.cursors}
         </Layer>

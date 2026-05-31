@@ -1,20 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { getStoredDisplayName, setStoredDisplayName } from "@/lib/displayName";
 
 export function BoardUnlockForm({ boardId }: { boardId: string }) {
   const router = useRouter();
   const [password, setPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setDisplayName(getStoredDisplayName());
+  }, []);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setLoading(true);
     try {
+      setStoredDisplayName(displayName);
       const res = await fetch(`/api/board/${encodeURIComponent(boardId)}/unlock`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -52,6 +59,21 @@ export function BoardUnlockForm({ boardId }: { boardId: string }) {
               {error}
             </p>
           ) : null}
+          <div className="space-y-2">
+            <label htmlFor="unlock-name" className="text-sm font-medium text-foreground">
+              Display name <span className="text-muted-foreground">(optional)</span>
+            </label>
+            <input
+              id="unlock-name"
+              type="text"
+              autoComplete="nickname"
+              maxLength={40}
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground shadow-sm outline-none transition focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+              placeholder="Shown on your cursor to others"
+            />
+          </div>
           <div className="space-y-2">
             <label htmlFor="unlock-password" className="text-sm font-medium text-foreground">
               Password
