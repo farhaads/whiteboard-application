@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { BOARD_COOKIE, BOARD_JWT_MAX_AGE_SEC, signBoardJwt } from "@/lib/boardJwt";
+import {
+  BOARD_COOKIE,
+  BOARD_JWT_MAX_AGE_SEC,
+  boardCookieName,
+  signBoardJwt,
+} from "@/lib/boardJwt";
 import { getBoardPasswordHash } from "@/lib/boardDb";
 
 export const runtime = "nodejs";
@@ -51,7 +56,7 @@ export async function POST(
 
   const token = await signBoardJwt(boardId);
   const res = NextResponse.json({ ok: true });
-  res.cookies.set(BOARD_COOKIE, token, {
+  res.cookies.set(boardCookieName(boardId) ?? BOARD_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
     path: "/",

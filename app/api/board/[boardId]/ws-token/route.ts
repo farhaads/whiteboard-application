@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { BOARD_COOKIE, verifyBoardJwt } from "@/lib/boardJwt";
+import { boardCookieName, verifyBoardJwt } from "@/lib/boardJwt";
 import { getSyncWebsocketBaseUrl } from "@/lib/syncUrl";
 
 export const runtime = "nodejs";
@@ -23,7 +23,8 @@ export async function GET(
   }
 
   const jar = cookies();
-  const token = jar.get(BOARD_COOKIE)?.value;
+  const cookieName = boardCookieName(boardId);
+  const token = cookieName ? jar.get(cookieName)?.value : undefined;
   const session = await verifyBoardJwt(token);
   if (!session || session.boardId !== boardId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

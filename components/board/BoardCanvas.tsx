@@ -283,12 +283,17 @@ export function BoardCanvas({ boardId }: { boardId: string }) {
 
   const onLogout = useCallback(async () => {
     try {
-      await fetch("/api/logout", { method: "POST", credentials: "include" });
+      await fetch("/api/logout", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ boardId }),
+      });
     } catch {
       /* still navigate away */
     }
     router.push("/");
-  }, [router]);
+  }, [boardId, router]);
 
   const attachTransformer = useCallback(() => {
     const tr = transformerRef.current;
