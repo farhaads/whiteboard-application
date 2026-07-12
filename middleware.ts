@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { BOARD_COOKIE, verifyBoardJwt } from "@/lib/boardJwt";
+import { boardCookieName, verifyBoardJwt } from "@/lib/boardJwt";
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -16,15 +16,16 @@ export async function middleware(request: NextRequest) {
   }
 
   const boardId = boardMatch[1];
-  const token = request.cookies.get(BOARD_COOKIE)?.value;
+  const cookieName = boardCookieName(boardId);
+  const token = cookieName ? request.cookies.get(cookieName)?.value : undefined;
   const session = await verifyBoardJwt(token);
 
   if (!session || session.boardId !== boardId) {
     const res = NextResponse.redirect(
       new URL(`/board/${encodeURIComponent(boardId)}/unlock`, request.url)
     );
-    if (token) {
-      res.cookies.set(BOARD_COOKIE, "", {
+    if (token && cookieName) {
+      res.cookies.set(cookieName, "", {
         path: "/",
         maxAge: 0,
       });
