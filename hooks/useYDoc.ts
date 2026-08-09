@@ -44,11 +44,22 @@ export function useYDoc(boardId: string) {
         syncUrl?: string;
       };
       if (cancelled) return;
-      const base = (
-        data.syncUrl ??
-        process.env.NEXT_PUBLIC_SYNC_URL ??
-        "ws://localhost:1234"
-      ).replace(/\/$/, "");
+
+      const configuredSyncUrl = data.syncUrl?.replace(/\/$/, "");
+      const sameOriginSyncUrl =
+        typeof window !== "undefined" && window.location
+          ? `${
+              window.location.protocol === "https:" ? "wss" : "ws"
+            }://${window.location.host}/yjs-ws`
+          : undefined;
+
+      const base = configuredSyncUrl ?? sameOriginSyncUrl;
+      if (!base) {
+        console.error(
+          "Yjs sync endpoint is not configured for this board session."
+        );
+        return;
+      }
 
       provider = new WebsocketProvider(base, boardId, doc, {
         params: { token: data.token },
